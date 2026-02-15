@@ -7,7 +7,6 @@ import numpy as np
 # Page configuration
 st.set_page_config(
     page_title="Fallas Air Pollution Analysis",
-    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -16,15 +15,15 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main-header {
-        font-size: 10rem;
+        font-size: 30rem;
         font-weight: bold;
-        color: #FF6B6B;
+        color: #ffffff;
         text-align: center;
         margin-bottom: 1rem;
     }
     .sub-header {
-        font-size: 4rem;
-        color: #666;
+        font-size: 15rem;
+        color: #ffffff;
         text-align: center;
         margin-bottom: 2rem;
     }
@@ -60,10 +59,10 @@ except Exception as e:
 
 if data_loaded:
     # Sidebar filters
-    st.sidebar.header("🔍 Filter Options")
+    st.sidebar.header("Filter Options")
     
     # Year selection
-    available_years = sorted([y for y in df['Year'].unique() if pd.notna(y)])
+    available_years = sorted([y for y in df['Year'].unique() if pd.notna(y) and y >= 2019])
     default_years = [y for y in [2022, 2023, 2024, 2025] if y in available_years]
     
     selected_years = st.sidebar.multiselect(
@@ -98,58 +97,31 @@ if data_loaded:
         'NO2(µg/m³)': 25
     }
     
-    # Calculate key metrics
+    # Calculate key metrics (for use in tabs)
     pre_fallas = filtered_df[filtered_df['Period'] == 'Pre-Fallas (Mar 1-14)'][selected_pollutant].mean()
     fallas = filtered_df[filtered_df['Period'] == 'Fallas (Mar 15-19)'][selected_pollutant].mean()
     post_fallas = filtered_df[filtered_df['Period'] == 'Post-Fallas (Mar 20-31)'][selected_pollutant].mean()
     rest_year = filtered_df[filtered_df['Period'] == 'Rest of Year'][selected_pollutant].mean()
-    
-    # Key Metrics Display
-    st.markdown("### 📊 Key Findings")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric(
-            label="Pre-Fallas Average",
-            value=f"{pre_fallas:.1f} µg/m³"
-        )
-    
-    with col2:
-        delta = fallas - pre_fallas
-        delta_pct = ((fallas - pre_fallas) / pre_fallas * 100) if pre_fallas > 0 else 0
-        st.metric(
-            label="During Fallas",
-            value=f"{fallas:.1f} µg/m³",
-            delta=f"{delta:+.1f} µg/m³ ({delta_pct:+.1f}%)"
-        )
-    
-    with col3:
-        st.metric(
-            label="Post-Fallas Average",
-            value=f"{post_fallas:.1f} µg/m³"
-        )
-    
-    with col4:
-        if selected_pollutant in who_guidelines:
-            who_limit = who_guidelines[selected_pollutant]
-            exceeds = "⚠️ EXCEEDS" if fallas > who_limit else "✅ Within"
-            st.metric(
-                label="WHO Guideline",
-                value=f"{who_limit} µg/m³",
-                delta=exceeds
-            )
+
+    # Replace NaN with 0.0 for safe display/plots
+    pre_fallas = float(pre_fallas) if pd.notna(pre_fallas) else 0.0
+    fallas = float(fallas) if pd.notna(fallas) else 0.0
+    post_fallas = float(post_fallas) if pd.notna(post_fallas) else 0.0
+    rest_year = float(rest_year) if pd.notna(rest_year) else 0.0
     
     # Tabs for different visualizations
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Time Series", "📊 Period Comparison", "📅 Year-by-Year", "⚠️ Health Impact"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Time Series", "Period Comparison", "Year-by-Year", "Health Impact"])
     
     with tab1:
         st.markdown("### Time Series: Pollution Levels During March")
         
         # Filter for March data
         march_df = filtered_df[filtered_df['Month'] == 3].copy()
-        
+
         if len(march_df) > 0:
+            # Sort by year and day to ensure continuous lines
+            march_df = march_df.sort_values(['Year', 'Day'])
+            
             fig = px.line(
                 march_df,
                 x='Day',
@@ -159,6 +131,9 @@ if data_loaded:
                 labels={'Day': 'Day of March', selected_pollutant: 'Concentration (µg/m³)'},
                 markers=True
             )
+            
+            # Make lines smooth/continuous
+            fig.update_traces(connectgaps=True, line_shape='spline')
             
             # Add Fallas period shading
             fig.add_vrect(
@@ -178,7 +153,7 @@ if data_loaded:
                 )
             
             fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("No March data available for selected years")
     
@@ -213,7 +188,7 @@ if data_loaded:
                 )
             
             fig_box.update_layout(height=400, showlegend=False)
-            st.plotly_chart(fig_box, use_container_width=True)
+            st.plotly_chart(fig_box, width="stretch")
         
         with col2:
             # Bar chart with averages
@@ -244,7 +219,7 @@ if data_loaded:
                     line_color="orange"
                 )
             
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, width="stretch")
     
     with tab3:
         st.markdown("### Year-by-Year Analysis")
@@ -298,7 +273,7 @@ if data_loaded:
                     height=400
                 )
                 
-                st.plotly_chart(fig_yearly, use_container_width=True)
+                st.plotly_chart(fig_yearly, width="stretch")
             
             with col2:
                 # Percentage change chart
@@ -318,12 +293,18 @@ if data_loaded:
                     title="Percentage Change During Fallas",
                     xaxis_title="Year",
                     yaxis_title="% Change from Pre-Fallas",
-                    height=400
+                    height=400,
+                    xaxis=dict(
+                        tickmode='linear',
+                        tick0=yearly_df['Year'].min(),
+                        dtick=1,
+                        tickformat='d'  # Display as integers
+                    )
                 )
                 
                 fig_pct.add_hline(y=0, line_color="black", line_width=1)
                 
-                st.plotly_chart(fig_pct, use_container_width=True)
+                st.plotly_chart(fig_pct, width="stretch")
             
             # Data table
             st.markdown("#### Detailed Statistics")
@@ -333,7 +314,7 @@ if data_loaded:
                     'During Fallas': '{:.1f}',
                     '% Change': '{:+.1f}%'
                 }),
-                use_container_width=True
+                width="stretch"
             )
     
     with tab4:
@@ -400,36 +381,25 @@ if data_loaded:
                 ))
                 
                 fig_gauge.update_layout(height=300)
-                st.plotly_chart(fig_gauge, use_container_width=True)
+                st.plotly_chart(fig_gauge, width="stretch")
         else:
             st.info("WHO guidelines are most stringent for particulate matter (PM2.5 and PM10). Select these pollutants to see health impact assessment.")
     
-    # Footer with data source and research question
+    # Footer with data source
     st.markdown("---")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **Data Sources:**
-        - Valencia Municipal Air Quality Network (Centro Station, 2018-2025)
-        - Sensor.community Citizen Science Network (Sensor #79124, Plaça de l'Ajuntament)
-        """)
-    
-    with col2:
-        st.markdown("""
-        **Research Question:**
-        
-        *To what extent do pyrotechnic activities during Valencia's Fallas 
-        increase particulate matter air pollution?*
-        """)
-    
     st.markdown("""
-    **Key Findings:**
-    - PM2.5 and PM10 show consistent dramatic increases during Fallas (up to 180%)
-    - Traffic-related pollutants (NO2, NOx) decrease, confirming pyrotechnics as the source
-    - Pollution levels exceed WHO guidelines in most years
-    - Recovery to baseline occurs within days after the festival
+    **Works Cited**
+    
+    *Data Sources:*
+    
+    Valencia Municipal Air Quality Network. *Air Quality Monitoring Data, Centro Station*. Valencia City Council, 2019-2025.
+    
+    Sensor.community. *Citizen Science Air Quality Sensor #79124, Plaça de l'Ajuntament*. Valencia, Spain, 2023-2026, aqicn.org/station/@373816/.
+    
+    *Health Guidelines:*
+    
+    World Health Organization. *WHO Global Air Quality Guidelines: Particulate Matter (PM2.5 and PM10), Ozone, Nitrogen Dioxide, Sulfur Dioxide and Carbon Monoxide*. World Health Organization, 2021.
     """)
 
 else:
